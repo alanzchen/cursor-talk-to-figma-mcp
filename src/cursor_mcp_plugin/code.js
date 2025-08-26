@@ -3968,22 +3968,22 @@ async function createConnections(params) {
 async function getSlides() {
   await figma.currentPage.loadAsync();
   
-  // Get all top-level frames on the current page that could be slides
-  const topLevelFrames = figma.currentPage.children.filter(node => node.type === "FRAME");
+  // Get all SLIDE nodes on the current page
+  const slideNodes = figma.currentPage.children.filter(node => node.type === "SLIDE");
   
-  const slides = topLevelFrames.map(frame => ({
-    id: frame.id,
-    name: frame.name,
-    type: frame.type,
-    width: frame.width,
-    height: frame.height,
-    x: frame.x,
-    y: frame.y,
-    visible: frame.visible,
-    locked: frame.locked,
-    // Check if frame has presentation properties
-    hasTransitions: frame.reactions && frame.reactions.length > 0,
-    childCount: frame.children.length
+  const slides = slideNodes.map(slide => ({
+    id: slide.id,
+    name: slide.name,
+    type: slide.type,
+    width: slide.width,
+    height: slide.height,
+    x: slide.x,
+    y: slide.y,
+    visible: slide.visible,
+    locked: slide.locked,
+    // Check if slide has presentation properties
+    hasTransitions: slide.reactions && slide.reactions.length > 0,
+    childCount: slide.children.length
   }));
 
   return {
@@ -3997,33 +3997,22 @@ async function getSlides() {
 }
 
 async function createSlide(params) {
-  const { name, frameId, width, height, backgroundColor } = params;
+  const { name, frameId, backgroundColor } = params;
   
   let slide;
   
   if (frameId) {
-    // Convert existing frame to slide
-    const existingFrame = await figma.getNodeByIdAsync(frameId);
-    if (!existingFrame) {
-      throw new Error(`Frame with ID ${frameId} not found`);
-    }
-    if (existingFrame.type !== "FRAME") {
-      throw new Error(`Node with ID ${frameId} is not a frame`);
-    }
-    
-    slide = existingFrame;
-    if (name) {
-      slide.name = name;
-    }
+    // Cannot convert existing frames to slides - SLIDE nodes must be created with figma.createSlide()
+    throw new Error("Converting existing frames to slides is not supported. SLIDE nodes must be created using figma.createSlide()");
   } else {
-    // Create new slide frame
-    slide = figma.createFrame();
+    // Create new slide using proper Figma Slides API
+    slide = figma.createSlide();
     slide.name = name || "Slide";
-    slide.x = 0;
-    slide.y = 0;
-    slide.resize(width || 1920, height || 1080);
     
-    // Set background color
+    // SLIDE nodes have a fixed size of 1920x1080 - no need to resize
+    // Position will be handled by Figma's slide layout system
+    
+    // Set background color if provided
     if (backgroundColor) {
       slide.fills = [{
         type: "SOLID",
@@ -4039,12 +4028,8 @@ async function createSlide(params) {
     figma.currentPage.appendChild(slide);
   }
   
-  // Auto-layout slides horizontally for presentation view
-  const allSlides = figma.currentPage.children.filter(node => node.type === "FRAME");
-  allSlides.forEach((slideFrame, index) => {
-    slideFrame.x = index * (slideFrame.width + 100); // 100px spacing
-    slideFrame.y = 0;
-  });
+  // Note: SLIDE nodes are automatically positioned by Figma's slide layout system
+  // No need for manual positioning like with frames
   
   return {
     id: slide.id,
@@ -4064,7 +4049,7 @@ async function getCurrentSlide() {
   const zoom = figma.viewport.zoom;
   
   await figma.currentPage.loadAsync();
-  const slides = figma.currentPage.children.filter(node => node.type === "FRAME");
+  const slides = figma.currentPage.children.filter(node => node.type === "SLIDE");
   
   // Find slide that contains the viewport center
   let currentSlide = null;
@@ -4111,14 +4096,14 @@ async function navigateToSlide(params) {
   const { slideId, slideIndex } = params;
   
   await figma.currentPage.loadAsync();
-  const slides = figma.currentPage.children.filter(node => node.type === "FRAME");
+  const slides = figma.currentPage.children.filter(node => node.type === "SLIDE");
   
   let targetSlide = null;
   
   if (slideId) {
     targetSlide = await figma.getNodeByIdAsync(slideId);
-    if (!targetSlide || targetSlide.type !== "FRAME") {
-      throw new Error(`Slide with ID ${slideId} not found or is not a frame`);
+    if (!targetSlide || targetSlide.type !== "SLIDE") {
+      throw new Error(`Slide with ID ${slideId} not found or is not a slide`);
     }
   } else if (slideIndex !== undefined) {
     if (slideIndex < 0 || slideIndex >= slides.length) {
@@ -4149,15 +4134,15 @@ async function setSlideTransition(params) {
   const { slideId, transition, targetSlideId } = params;
   
   const slide = await figma.getNodeByIdAsync(slideId);
-  if (!slide || slide.type !== "FRAME") {
-    throw new Error(`Slide with ID ${slideId} not found or is not a frame`);
+  if (!slide || slide.type !== "SLIDE") {
+    throw new Error(`Slide with ID ${slideId} not found or is not a slide`);
   }
   
   let targetSlide = null;
   if (targetSlideId) {
     targetSlide = await figma.getNodeByIdAsync(targetSlideId);
-    if (!targetSlide || targetSlide.type !== "FRAME") {
-      throw new Error(`Target slide with ID ${targetSlideId} not found or is not a frame`);
+    if (!targetSlide || targetSlide.type !== "SLIDE") {
+      throw new Error(`Target slide with ID ${targetSlideId} not found or is not a slide`);
     }
   }
   
@@ -4208,8 +4193,8 @@ async function setSlideBackground(params) {
   const { slideId, background } = params;
   
   const slide = await figma.getNodeByIdAsync(slideId);
-  if (!slide || slide.type !== "FRAME") {
-    throw new Error(`Slide with ID ${slideId} not found or is not a frame`);
+  if (!slide || slide.type !== "SLIDE") {
+    throw new Error(`Slide with ID ${slideId} not found or is not a slide`);
   }
   
   try {

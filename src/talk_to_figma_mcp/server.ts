@@ -2968,7 +2968,7 @@ function sendCommandToFigma(
 // Get Slides Tool
 server.tool(
   "get_slides",
-  "Get all slides in the current Figma document",
+  "Get all SLIDE nodes in the current Figma document using Figma Slides API",
   {},
   async () => {
     try {
@@ -2997,12 +2997,9 @@ server.tool(
 // Create Slide Tool
 server.tool(
   "create_slide",
-  "Create a new slide from a frame or create a new slide frame",
+  "Create a new slide using Figma Slides API. SLIDE nodes have a fixed size of 1920x1080.",
   {
     name: z.string().describe("Name for the slide"),
-    frameId: z.string().optional().describe("Optional frame ID to convert to slide"),
-    width: z.number().optional().describe("Width of new slide frame (default: 1920)"),
-    height: z.number().optional().describe("Height of new slide frame (default: 1080)"),
     backgroundColor: z
       .object({
         r: z.number().min(0).max(1).describe("Red component (0-1)"),
@@ -3013,21 +3010,18 @@ server.tool(
       .optional()
       .describe("Background color for the slide"),
   },
-  async ({ name, frameId, width, height, backgroundColor }: any) => {
+  async ({ name, backgroundColor }: any) => {
     try {
       const result = await sendCommandToFigma("create_slide", {
         name,
-        frameId,
-        width: width || 1920,
-        height: height || 1080,
-        backgroundColor: backgroundColor || { r: 1, g: 1, b: 1, a: 1 },
+        backgroundColor,
       });
       const typedResult = result as { name: string; id: string; isSlide: boolean };
       return {
         content: [
           {
             type: "text",
-            text: `Created slide "${typedResult.name}" with ID: ${typedResult.id}. Slide status: ${typedResult.isSlide ? 'Active' : 'Frame converted'}`,
+            text: `Created slide "${typedResult.name}" with ID: ${typedResult.id}. Slide created using figma.createSlide() API.`,
           },
         ],
       };

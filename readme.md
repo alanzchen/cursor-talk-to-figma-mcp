@@ -149,8 +149,8 @@ The MCP server provides the following tools for interacting with Figma:
 
 ### Slides & Presentations
 
-- `get_slides` - Get all slides (top-level frames) in the current document with slide properties
-- `create_slide` - Create a new slide frame or convert an existing frame to a slide
+- `get_slides` - Get all SLIDE nodes in the current document using Figma Slides API
+- `create_slide` - Create a new slide using figma.createSlide() API (fixed 1920x1080 size)
 - `get_current_slide` - Get information about the currently active slide in the viewport
 - `navigate_to_slide` - Navigate to a specific slide by ID or index, centering it in the viewport
 - `set_slide_transition` - Set transition properties between slides (dissolve, slide, push effects)
