@@ -2582,7 +2582,13 @@ type FigmaCommand =
   | "set_item_spacing"
   | "get_reactions"
   | "set_default_connector"
-  | "create_connections";
+  | "create_connections"
+  | "get_slides"
+  | "create_slide"
+  | "get_current_slide"
+  | "navigate_to_slide"
+  | "set_slide_transition"
+  | "set_slide_background";
 
 type CommandParams = {
   get_document_info: Record<string, never>;
@@ -2956,6 +2962,235 @@ function sendCommandToFigma(
     ws.send(JSON.stringify(request));
   });
 }
+
+// Slide Management Tools
+
+// Get Slides Tool
+server.tool(
+  "get_slides",
+  "Get all SLIDE nodes in the current Figma document using Figma Slides API",
+  {},
+  async () => {
+    try {
+      const result = await sendCommandToFigma("get_slides");
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error getting slides: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Create Slide Tool
+server.tool(
+  "create_slide",
+  "Create a new slide using Figma Slides API. SLIDE nodes have a fixed size of 1920x1080.",
+  {
+    name: z.string().describe("Name for the slide"),
+    backgroundColor: z
+      .object({
+        r: z.number().min(0).max(1).describe("Red component (0-1)"),
+        g: z.number().min(0).max(1).describe("Green component (0-1)"),
+        b: z.number().min(0).max(1).describe("Blue component (0-1)"),
+        a: z.number().min(0).max(1).optional().describe("Alpha component (0-1)"),
+      })
+      .optional()
+      .describe("Background color for the slide"),
+  },
+  async ({ name, backgroundColor }: any) => {
+    try {
+      const result = await sendCommandToFigma("create_slide", {
+        name,
+        backgroundColor,
+      });
+      const typedResult = result as { name: string; id: string; isSlide: boolean };
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Created slide "${typedResult.name}" with ID: ${typedResult.id}. Slide created using figma.createSlide() API.`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error creating slide: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Get Current Slide Tool
+server.tool(
+  "get_current_slide",
+  "Get information about the currently active slide",
+  {},
+  async () => {
+    try {
+      const result = await sendCommandToFigma("get_current_slide");
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error getting current slide: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Navigate to Slide Tool
+server.tool(
+  "navigate_to_slide",
+  "Navigate to a specific slide by ID or index",
+  {
+    slideId: z.string().optional().describe("ID of the slide to navigate to"),
+    slideIndex: z.number().optional().describe("Index of the slide to navigate to (0-based)"),
+  },
+  async ({ slideId, slideIndex }: any) => {
+    try {
+      if (!slideId && slideIndex === undefined) {
+        throw new Error("Either slideId or slideIndex must be provided");
+      }
+      const result = await sendCommandToFigma("navigate_to_slide", {
+        slideId,
+        slideIndex,
+      });
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Successfully navigated to slide: ${JSON.stringify(result)}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error navigating to slide: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Set Slide Transition Tool
+server.tool(
+  "set_slide_transition",
+  "Set transition properties for a slide",
+  {
+    slideId: z.string().describe("ID of the slide to set transition for"),
+    transition: z.object({
+      type: z.enum(["DISSOLVE", "SLIDE_IN", "SLIDE_OUT", "PUSH", "NONE"]).describe("Type of transition"),
+      direction: z.enum(["LEFT", "RIGHT", "UP", "DOWN"]).optional().describe("Direction for slide transitions"),
+      duration: z.number().min(0).max(5000).optional().describe("Duration in milliseconds (0-5000)"),
+      easing: z.enum(["EASE_IN", "EASE_OUT", "EASE_IN_OUT", "LINEAR", "EASE_IN_BACK", "EASE_OUT_BACK", "EASE_IN_OUT_BACK"]).optional().describe("Easing function"),
+    }).describe("Transition configuration"),
+    targetSlideId: z.string().optional().describe("Target slide ID for the transition"),
+  },
+  async ({ slideId, transition, targetSlideId }: any) => {
+    try {
+      const result = await sendCommandToFigma("set_slide_transition", {
+        slideId,
+        transition,
+        targetSlideId,
+      });
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Successfully set transition for slide ${slideId}: ${JSON.stringify(result)}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error setting slide transition: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Set Slide Background Tool
+server.tool(
+  "set_slide_background",
+  "Set background properties for a slide",
+  {
+    slideId: z.string().describe("ID of the slide to set background for"),
+    background: z.object({
+      type: z.enum(["SOLID", "GRADIENT", "IMAGE"]).describe("Background type"),
+      color: z.object({
+        r: z.number().min(0).max(1).describe("Red component (0-1)"),
+        g: z.number().min(0).max(1).describe("Green component (0-1)"),
+        b: z.number().min(0).max(1).describe("Blue component (0-1)"),
+        a: z.number().min(0).max(1).optional().describe("Alpha component (0-1)"),
+      }).optional().describe("Solid color for background"),
+      imageUrl: z.string().optional().describe("URL for image background"),
+      scaleMode: z.enum(["FILL", "FIT", "CROP", "TILE"]).optional().describe("Image scaling mode"),
+    }).describe("Background configuration"),
+  },
+  async ({ slideId, background }: any) => {
+    try {
+      const result = await sendCommandToFigma("set_slide_background", {
+        slideId,
+        background,
+      });
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Successfully set background for slide ${slideId}: ${JSON.stringify(result)}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error setting slide background: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
 
 // Update the join_channel tool
 server.tool(
