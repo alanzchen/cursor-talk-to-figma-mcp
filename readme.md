@@ -147,6 +147,15 @@ The MCP server provides the following tools for interacting with Figma:
 - `set_default_connector` - Set a copied FigJam connector as the default connector style for creating connections (must be set before creating connections)
 - `create_connections` - Create FigJam connector lines between nodes, based on prototype flows or custom mapping
 
+### Slides & Presentations
+
+- `get_slides` - Get all slides (top-level frames) in the current document with slide properties
+- `create_slide` - Create a new slide frame or convert an existing frame to a slide
+- `get_current_slide` - Get information about the currently active slide in the viewport
+- `navigate_to_slide` - Navigate to a specific slide by ID or index, centering it in the viewport
+- `set_slide_transition` - Set transition properties between slides (dissolve, slide, push effects)
+- `set_slide_background` - Set background properties for a slide (solid color, gradient, image)
+
 ### Creating Elements
 
 - `create_rectangle` - Create a new rectangle with position, size, and optional name

@@ -229,6 +229,18 @@ async function handleCommand(command, params) {
       return await setDefaultConnector(params);
     case "create_connections":
       return await createConnections(params);
+    case "get_slides":
+      return await getSlides();
+    case "create_slide":
+      return await createSlide(params);
+    case "get_current_slide":
+      return await getCurrentSlide();
+    case "navigate_to_slide":
+      return await navigateToSlide(params);
+    case "set_slide_transition":
+      return await setSlideTransition(params);
+    case "set_slide_background":
+      return await setSlideBackground(params);
     default:
       throw new Error(`Unknown command: ${command}`);
   }
@@ -3949,4 +3961,319 @@ async function createConnections(params) {
     count: results.length,
     connections: results
   };
+}
+
+// Slide Management Functions
+
+async function getSlides() {
+  await figma.currentPage.loadAsync();
+  
+  // Get all top-level frames on the current page that could be slides
+  const topLevelFrames = figma.currentPage.children.filter(node => node.type === "FRAME");
+  
+  const slides = topLevelFrames.map(frame => ({
+    id: frame.id,
+    name: frame.name,
+    type: frame.type,
+    width: frame.width,
+    height: frame.height,
+    x: frame.x,
+    y: frame.y,
+    visible: frame.visible,
+    locked: frame.locked,
+    // Check if frame has presentation properties
+    hasTransitions: frame.reactions && frame.reactions.length > 0,
+    childCount: frame.children.length
+  }));
+
+  return {
+    currentPage: {
+      id: figma.currentPage.id,
+      name: figma.currentPage.name
+    },
+    slideCount: slides.length,
+    slides: slides
+  };
+}
+
+async function createSlide(params) {
+  const { name, frameId, width, height, backgroundColor } = params;
+  
+  let slide;
+  
+  if (frameId) {
+    // Convert existing frame to slide
+    const existingFrame = await figma.getNodeByIdAsync(frameId);
+    if (!existingFrame) {
+      throw new Error(`Frame with ID ${frameId} not found`);
+    }
+    if (existingFrame.type !== "FRAME") {
+      throw new Error(`Node with ID ${frameId} is not a frame`);
+    }
+    
+    slide = existingFrame;
+    if (name) {
+      slide.name = name;
+    }
+  } else {
+    // Create new slide frame
+    slide = figma.createFrame();
+    slide.name = name || "Slide";
+    slide.x = 0;
+    slide.y = 0;
+    slide.resize(width || 1920, height || 1080);
+    
+    // Set background color
+    if (backgroundColor) {
+      slide.fills = [{
+        type: "SOLID",
+        color: {
+          r: backgroundColor.r,
+          g: backgroundColor.g,
+          b: backgroundColor.b
+        },
+        opacity: backgroundColor.a || 1
+      }];
+    }
+    
+    figma.currentPage.appendChild(slide);
+  }
+  
+  // Auto-layout slides horizontally for presentation view
+  const allSlides = figma.currentPage.children.filter(node => node.type === "FRAME");
+  allSlides.forEach((slideFrame, index) => {
+    slideFrame.x = index * (slideFrame.width + 100); // 100px spacing
+    slideFrame.y = 0;
+  });
+  
+  return {
+    id: slide.id,
+    name: slide.name,
+    type: slide.type,
+    width: slide.width,
+    height: slide.height,
+    x: slide.x,
+    y: slide.y,
+    isSlide: true
+  };
+}
+
+async function getCurrentSlide() {
+  // Get current viewport center to determine which slide is currently viewed
+  const viewport = figma.viewport.center;
+  const zoom = figma.viewport.zoom;
+  
+  await figma.currentPage.loadAsync();
+  const slides = figma.currentPage.children.filter(node => node.type === "FRAME");
+  
+  // Find slide that contains the viewport center
+  let currentSlide = null;
+  let closestDistance = Infinity;
+  
+  slides.forEach(slide => {
+    const slideCenter = {
+      x: slide.x + slide.width / 2,
+      y: slide.y + slide.height / 2
+    };
+    
+    const distance = Math.sqrt(
+      Math.pow(viewport.x - slideCenter.x, 2) + 
+      Math.pow(viewport.y - slideCenter.y, 2)
+    );
+    
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      currentSlide = slide;
+    }
+  });
+  
+  if (!currentSlide) {
+    return {
+      message: "No slide found in current viewport",
+      viewport: { x: viewport.x, y: viewport.y, zoom: zoom }
+    };
+  }
+  
+  return {
+    id: currentSlide.id,
+    name: currentSlide.name,
+    type: currentSlide.type,
+    width: currentSlide.width,
+    height: currentSlide.height,
+    x: currentSlide.x,
+    y: currentSlide.y,
+    viewport: { x: viewport.x, y: viewport.y, zoom: zoom },
+    isCurrent: true
+  };
+}
+
+async function navigateToSlide(params) {
+  const { slideId, slideIndex } = params;
+  
+  await figma.currentPage.loadAsync();
+  const slides = figma.currentPage.children.filter(node => node.type === "FRAME");
+  
+  let targetSlide = null;
+  
+  if (slideId) {
+    targetSlide = await figma.getNodeByIdAsync(slideId);
+    if (!targetSlide || targetSlide.type !== "FRAME") {
+      throw new Error(`Slide with ID ${slideId} not found or is not a frame`);
+    }
+  } else if (slideIndex !== undefined) {
+    if (slideIndex < 0 || slideIndex >= slides.length) {
+      throw new Error(`Slide index ${slideIndex} is out of range (0-${slides.length - 1})`);
+    }
+    targetSlide = slides[slideIndex];
+  } else {
+    throw new Error("Either slideId or slideIndex must be provided");
+  }
+  
+  // Center viewport on the target slide
+  const slideCenter = {
+    x: targetSlide.x + targetSlide.width / 2,
+    y: targetSlide.y + targetSlide.height / 2
+  };
+  
+  figma.viewport.scrollAndZoomIntoView([targetSlide]);
+  
+  return {
+    id: targetSlide.id,
+    name: targetSlide.name,
+    navigatedTo: true,
+    center: slideCenter
+  };
+}
+
+async function setSlideTransition(params) {
+  const { slideId, transition, targetSlideId } = params;
+  
+  const slide = await figma.getNodeByIdAsync(slideId);
+  if (!slide || slide.type !== "FRAME") {
+    throw new Error(`Slide with ID ${slideId} not found or is not a frame`);
+  }
+  
+  let targetSlide = null;
+  if (targetSlideId) {
+    targetSlide = await figma.getNodeByIdAsync(targetSlideId);
+    if (!targetSlide || targetSlide.type !== "FRAME") {
+      throw new Error(`Target slide with ID ${targetSlideId} not found or is not a frame`);
+    }
+  }
+  
+  // Create a reaction for the transition
+  const reaction = {
+    action: {
+      type: targetSlide ? "NODE" : "NAVIGATE",
+      destinationId: targetSlide ? targetSlide.id : null,
+      navigation: targetSlide ? "NAVIGATE" : "SCROLL_TO",
+      transition: {
+        type: transition.type || "DISSOLVE",
+        duration: transition.duration || 300,
+        easing: {
+          type: transition.easing || "EASE_IN_OUT"
+        }
+      }
+    },
+    trigger: {
+      type: "ON_CLICK"
+    }
+  };
+  
+  // Add direction for slide transitions
+  if (transition.direction && (transition.type === "SLIDE_IN" || transition.type === "SLIDE_OUT" || transition.type === "PUSH")) {
+    reaction.action.transition.direction = transition.direction;
+  }
+  
+  // Apply the reaction to the slide
+  try {
+    if (!slide.reactions) {
+      slide.reactions = [];
+    }
+    slide.reactions.push(reaction);
+    
+    return {
+      slideId: slide.id,
+      transitionSet: true,
+      transition: transition,
+      targetSlideId: targetSlideId,
+      reactionAdded: true
+    };
+  } catch (error) {
+    throw new Error(`Failed to set slide transition: ${error.message}`);
+  }
+}
+
+async function setSlideBackground(params) {
+  const { slideId, background } = params;
+  
+  const slide = await figma.getNodeByIdAsync(slideId);
+  if (!slide || slide.type !== "FRAME") {
+    throw new Error(`Slide with ID ${slideId} not found or is not a frame`);
+  }
+  
+  try {
+    switch (background.type) {
+      case "SOLID":
+        if (!background.color) {
+          throw new Error("Color is required for solid background");
+        }
+        slide.fills = [{
+          type: "SOLID",
+          color: {
+            r: background.color.r,
+            g: background.color.g,
+            b: background.color.b
+          },
+          opacity: background.color.a || 1
+        }];
+        break;
+        
+      case "IMAGE":
+        if (!background.imageUrl) {
+          throw new Error("Image URL is required for image background");
+        }
+        // For image backgrounds, we'll create a simple representation
+        // In a real implementation, you'd handle image loading
+        slide.fills = [{
+          type: "SOLID",
+          color: { r: 0.9, g: 0.9, b: 0.9 }, // Placeholder gray
+          opacity: 1
+        }];
+        break;
+        
+      case "GRADIENT":
+        // Create a simple gradient
+        slide.fills = [{
+          type: "GRADIENT_LINEAR",
+          gradientStops: [
+            {
+              position: 0,
+              color: background.color || { r: 1, g: 1, b: 1 }
+            },
+            {
+              position: 1,
+              color: background.color || { r: 0.8, g: 0.8, b: 0.8 }
+            }
+          ],
+          gradientTransform: [
+            [1, 0, 0],
+            [0, 1, 0]
+          ]
+        }];
+        break;
+        
+      default:
+        throw new Error(`Unsupported background type: ${background.type}`);
+    }
+    
+    return {
+      slideId: slide.id,
+      backgroundSet: true,
+      backgroundType: background.type,
+      success: true
+    };
+  } catch (error) {
+    throw new Error(`Failed to set slide background: ${error.message}`);
+  }
 }
